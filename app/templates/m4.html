@@ -1,27 +1,293 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="kpis">
-  <div class="kpi"><b>航段</b><strong>9</strong><small>条</small></div>
-  <div class="kpi"><b>通过</b><strong>7</strong><small>条</small></div>
-  <div class="kpi"><b>隔离</b><strong>1</strong><small>条</small></div>
-  <div class="kpi"><b>规则版</b><strong>1.4</strong><small>v</small></div>
+<style>
+  .itin{display:grid;gap:var(--gap)}
+  .itin__bar{display:flex;flex-wrap:wrap;gap:8px;align-items:end;border:1px solid var(--line);background:var(--panel);padding:9px 11px;border-radius:var(--radius)}
+  .itin__bar label{display:grid;gap:3px;font:9px var(--mono);color:var(--ink-3);letter-spacing:.05em}
+  .itin__bar input,.itin__bar select{height:26px;border:1px solid var(--line);background:#04121e;color:var(--ink);font:10px var(--mono);padding:0 6px;min-width:130px}
+  .itin__bar .grow{flex:1 1 240px}
+  .itin__bar input[type=file]{padding:3px 6px}
+  .seg{display:flex;gap:4px}
+  .seg a{padding:5px 9px;border:1px solid var(--line);color:var(--ink-3);font:10px var(--mono);text-decoration:none}
+  .seg a.is-on{border-color:var(--accent);color:var(--accent)}
+  .banner{border:1px solid var(--line-2);background:var(--panel);padding:8px 11px;font:10px var(--mono);color:var(--ink-2);display:flex;gap:14px;flex-wrap:wrap}
+  .banner b{color:var(--accent)}
+  .chain{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius)}
+  .chain__head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:7px 11px;border-bottom:1px solid var(--line);font:10px var(--mono)}
+  .chain__legs{width:100%;border-collapse:collapse}
+  .chain__legs th{text-align:left;padding:5px 9px;background:var(--panel-2);color:var(--ink-3);font:9px var(--mono);position:sticky;top:0}
+  .chain__legs td{padding:5px 9px;border-top:1px solid #17364b;font:10px var(--mono);vertical-align:top}
+  .chain__legs tr.is-open{background:#12314a}
+  .conn{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 10px;margin:0;padding:6px 9px;border-top:1px dashed #2b4d63;font:9px var(--mono);color:var(--ink-2)}
+  .conn dt{color:var(--ink-3)}
+  .conn dd{margin:0;color:var(--ink)}
+  .tag{display:inline-block;padding:1px 5px;border:1px solid var(--line-2);font:9px var(--mono);color:var(--ink-3)}
+  .tag--ok{color:var(--ok);border-color:#2d6b4d}
+  .tag--bad{color:var(--bad);border-color:#6b2f33}
+  .tag--warn{color:var(--warn);border-color:#6b5623}
+  .tag--info{color:var(--info);border-color:#2d5a70}
+  .detail{display:grid;gap:8px}
+  .detail dl{display:grid;grid-template-columns:110px 1fr;gap:3px 10px;margin:0;font:10px var(--mono)}
+  .detail dt{color:var(--ink-3)}
+  .detail dd{margin:0}
+  textarea{width:100%;min-height:52px;border:1px solid var(--line);background:#04121e;color:var(--ink);font:10px var(--mono);padding:6px}
+  .history{border-left:2px solid var(--line-2);padding-left:9px;display:grid;gap:7px}
+  .history article{font:10px var(--mono);color:var(--ink-2)}
+  .history article b{color:var(--accent)}
+  .history .raw{color:var(--ink-3);word-break:break-all}
+  .empty{padding:18px;color:var(--ink-3);font:10px var(--mono)}
+  .muted{color:var(--ink-3)}
+  .corr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px}
+  .corr-grid label{display:grid;gap:3px;font:9px var(--mono);color:var(--ink-3)}
+  .corr-grid input,.corr-grid select{height:24px;border:1px solid var(--line);background:#04121e;color:var(--ink);font:10px var(--mono);padding:0 5px}
+  .toast{font:10px var(--mono);color:var(--info)}
+</style>
+
+{% set data = view %}
+<section class="itin__bar">
+  <form method="post" action="/api/imports" enctype="multipart/form-data" id="import-form" style="display:flex;gap:8px;align-items:end">
+    <label>实际航段 CSV<input type="file" name="file" accept=".csv,text/csv" required></label>
+    <button class="btn btn--primary" type="submit">导入</button>
+  </form>
+  <form method="get" action="/itineraries" style="display:flex;gap:8px;align-items:end">
+    <label>批次<select name="import_id">
+      {% for item in imports %}<option value="{{ item.import_id }}" {% if item.import_id == import_id %}selected{% endif %}>{{ item.import_id }} · {{ item.row_count }} 行</option>{% endfor %}
+      {% if not imports %}<option value="">尚无批次</option>{% endif %}
+    </select></label>
+    <label>视图<select name="select">
+      <option value="current" {% if select == 'current' %}selected{% endif %}>现行航链</option>
+      <option value="archived" {% if select == 'archived' %}selected{% endif %}>归档航链</option>
+    </select></label>
+    <button class="btn" type="submit">切换</button>
+  </form>
+  <div class="seg" style="margin-left:auto">
+    <a href="/itineraries?import_id={{ import_id }}&select=current" class="{% if select == 'current' %}is-on{% endif %}">现行</a>
+    <a href="/itineraries?import_id={{ import_id }}&select=archived" class="{% if select == 'archived' %}is-on{% endif %}">归档</a>
+  </div>
 </section>
-<div class="grid grid--split">
+
+{% if data %}
+<section class="banner">
+  <span>批次 <b>{{ data.import_id }}</b></span>
+  <span>归档于 <b>{{ data.archived_at }}</b></span>
+  {% if select == 'archived' %}
+  <span class="tag tag--warn">归档快照 · 不随更正变化</span>
+  {% else %}
+  <span>航段 {{ data.current.counts.legs }}</span>
+  <span>在链 {{ data.current.counts.active }}</span>
+  <span>隔离 {{ data.current.counts.isolated }}</span>
+  <span>航链 {{ data.current.counts.chains }}</span>
+  <span>重算衔接 <b>{{ data.current.recalculated_connections|length }}</b></span>
+  {% endif %}
+</section>
+
+<div class="itin">
   <section class="panel">
-    <div class="panel__head"><h2>UTC 航链</h2><span class="state state--ok">通过</span></div>
+    <div class="panel__head"><h2>{% if select == 'archived' %}归档航链{% else %}现行 UTC 航链{% endif %}</h2><span class="panel__meta">{{ data.view.chains|length }} 条链</span></div>
     <div class="panel__body panel__body--scroll">
-      <table class="ledger"><thead><tr><th>序号</th><th>业务键</th><th>状态</th><th class="num">值</th></tr></thead>
-      <tbody>{% for row in rows %}<tr><td class="num">{{ loop.index }}</td><td>{{ row.key }}</td><td>{{ row.status }}</td><td class="num">{{ row.value }}</td></tr>{% endfor %}</tbody></table>
+      {% for chain in data.view.chains %}
+      <div class="chain">
+        <div class="chain__head">
+          <span>{{ chain.chain_id }}</span>
+          <span class="{% if chain.status == 'VALID' %}tag tag--ok{% else %}tag tag--bad{% endif %}">{{ chain.status }}</span>
+          <span class="muted">{{ chain.departure_utc }} → {{ chain.arrival_utc }} · {{ chain.span_minutes }} 分钟</span>
+        </div>
+        <table class="chain__legs">
+          <thead><tr><th>航段</th><th>起飞 UTC</th><th>到达 UTC</th><th>等待</th><th>衔接</th></tr></thead>
+          <tbody>
+          {% for leg_key in chain.leg_keys %}
+            {% set leg = (data.view.legs | selectattr('leg_key', 'equalto', leg_key) | list | first) %}
+            <tr>
+              <td>{{ leg_key }}{% if leg and leg.get('revision', 1) > 1 %} <span class="tag tag--info">r{{ leg.revision }}</span>{% endif %}</td>
+              <td>{{ leg.departure_utc if leg else '—' }}</td>
+              <td>{{ leg.arrival_utc if leg else '—' }}</td>
+              <td>{{ leg.duration_minutes if leg else '—' }}</td>
+              <td>—</td>
+            </tr>
+            {% if not loop.last and chain.connections %}
+              {% set conn = chain.connections[loop.index0] %}
+              <tr><td colspan="5">
+                <dl class="conn">
+                  <div><dt>衔接点</dt><dd>{{ conn.airport }} · {{ conn.arrival_terminal }}→{{ conn.departure_terminal }}</dd></div>
+                  <div><dt>等待分钟</dt><dd>{{ conn.wait_minutes }} / 需要 {{ conn.required_minutes }}</dd></div>
+                  <div><dt>判定</dt><dd>
+                    {% if conn.status == 'VALID' %}<span class="tag tag--ok">VALID</span>{% else %}<span class="tag tag--bad">{{ conn.status }}</span>{% endif %}
+                    {% if conn.recalculated %}<span class="tag tag--info">已重算</span>{% endif %}
+                    {% if conn.changed %}<span class="tag tag--warn">原 {{ conn.archived_status }} → {{ conn.status }}</span>{% endif %}
+                  </dd></div>
+                  <div><dt>UTC 窗口</dt><dd>{{ conn.arrival_utc }} → {{ conn.departure_utc }}</dd></div>
+                </dl>
+              </td></tr>
+            {% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">当前视图没有可构成的航链。</div>
+      {% endfor %}
     </div>
   </section>
-  <section class="panel panel--evidence">
-    <div class="panel__head"><h2>证据</h2><span class="panel__meta">5 条</span></div>
-    <div class="panel__body"><div class="evidence"><b>RUN-660-4</b><span>LINE 5</span><code>/api/itineraries/build</code></div><pre id="result">等待运行</pre></div>
-  </section>
-  <section class="panel panel--status">
-    <div class="panel__head"><h2>原因分布</h2><span class="panel__meta">1 类</span></div>
-    <div class="panel__body"><div class="bar"><i style="width:73%"></i></div><div class="legend"><span>采纳 9</span><span>隔离 1</span></div></div>
-  </section>
-</div>
-{% endblock %}
 
+  <section class="panel">
+    <div class="panel__head"><h2>隔离依据</h2><span class="panel__meta">{{ data.view.isolated|length }} 条</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger"><thead><tr><th>航段</th><th>原因码</th><th>说明</th><th>版本</th></tr></thead>
+        <tbody>
+        {% for item in data.view.isolated %}
+          <tr><td>{{ item.leg_key }}</td><td>{{ item.isolation_code }}</td><td>{{ item.isolation_message }}</td><td class="num">r{{ item.revision }}</td></tr>
+        {% else %}
+          <tr><td colspan="4" class="muted">无隔离航段</td></tr>
+        {% endfor %}
+        </tbody></table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head"><h2>逐段更正</h2><span class="panel__meta" id="corr-meta">选择航段查看原始行与历次解释</span></div>
+    <div class="panel__body detail">
+      {% if select == 'archived' %}
+      <p class="muted">归档视图只读，切换到现行航链后才能更正。</p>
+      {% endif %}
+      <div>
+        <label style="font:9px var(--mono);color:var(--ink-3)">航段
+          <select id="leg-select" style="width:100%;height:26px;border:1px solid var(--line);background:#04121e;color:var(--ink);font:10px var(--mono)">
+            {% for leg in data.selectable %}
+            <option value="{{ leg.leg_key }}" data-revision="{{ leg.revision }}">{{ leg.leg_key }} · r{{ leg.revision }}{% if leg.isolation_code %} · 隔离 {{ leg.isolation_code }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="corr-grid" id="corr-fields">
+        <label>起飞当地<input data-field="departure_local"></label>
+        <label>到达当地<input data-field="arrival_local"></label>
+        <label>起飞 fold<select data-field="departure_fold"><option value="">未选</option><option value="0">0 较早</option><option value="1">1 较晚</option></select></label>
+        <label>到达 fold<select data-field="arrival_fold"><option value="">未选</option><option value="0">0 较早</option><option value="1">1 较晚</option></select></label>
+        <label>起飞航站楼<input data-field="departure_terminal"></label>
+        <label>到达航站楼<input data-field="arrival_terminal"></label>
+      </div>
+      <label style="font:9px var(--mono);color:var(--ink-3)">更正理由（必填）<textarea id="corr-reason" placeholder="说明来源或更正依据"></textarea></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn--primary" id="corr-submit" {% if select == 'archived' %}disabled{% endif %}>提交更正</button>
+        <span class="toast" id="corr-status"></span>
+      </div>
+      <div class="history" id="corr-history"></div>
+    </div>
+  </section>
+
+  {% if select == 'current' and data.current.recalculated_connections %}
+  <section class="panel">
+    <div class="panel__head"><h2>相邻衔接重算</h2><span class="panel__meta">{{ data.current.recalculated_connections|length }} 处</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger"><thead><tr><th>衔接点</th><th>原判定</th><th>现行判定</th><th class="num">等待</th><th>UTC 窗口</th></tr></thead>
+        <tbody>
+        {% for conn in data.current.recalculated_connections %}
+          <tr><td>{{ conn.airport }} {{ conn.from_leg }} → {{ conn.to_leg }}</td>
+            <td>{{ conn.archived_status or '新增' }}</td>
+            <td>{% if conn.status == 'VALID' %}<span class="tag tag--ok">VALID</span>{% else %}<span class="tag tag--bad">{{ conn.status }}</span>{% endif %}</td>
+            <td class="num">{{ conn.wait_minutes }} / {{ conn.required_minutes }}</td>
+            <td>{{ conn.arrival_utc }} → {{ conn.departure_utc }}</td></tr>
+        {% endfor %}
+        </tbody></table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% else %}
+<div class="empty">尚无导入批次。选择实际航段 CSV 后点击导入。</div>
+{% endif %}
+
+<script>
+(() => {
+  const importId = {{ (import_id or '')|tojson }};
+  const select = {{ select|tojson }};
+  const state = {leg: null};
+
+  document.querySelector("#import-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const response = await fetch("/api/imports", {method: "POST", body: formData});
+    const data = await response.json();
+    if (!response.ok) {
+      document.querySelector("#corr-status").textContent = data.detail?.message || "导入失败";
+      return;
+    }
+    location.href = `/itineraries?import_id=${data.import_id}&select=current`;
+  });
+
+  const selector = document.querySelector("#leg-select");
+  const fields = document.querySelectorAll("#corr-fields [data-field]");
+  const status = document.querySelector("#corr-status");
+  const history = document.querySelector("#corr-history");
+
+  function renderHistory(data) {
+    if (!data) return;
+    const rows = [];
+    for (const raw of data.raw) {
+      rows.push(`<article><b>原始行 LINE ${raw.line_no}</b><div class="raw">${escapeHtml(raw.raw_line)}</div></article>`);
+    }
+    for (const rev of data.revisions) {
+      const iso = rev.isolation_code ? `<span class="tag tag--bad">${rev.isolation_code}</span> ${rev.isolation_message || ""}` : "已采信";
+      rows.push(`<article><b>r${rev.revision}</b> ${rev.source === "import" ? "导入" : "更正"} · ${iso}
+        <div class="muted">${rev.departure_utc || "—"} → ${rev.arrival_utc || "—"} · ${rev.duration_minutes ?? "—"} 分钟</div>
+        <div>${escapeHtml(rev.reason || "")}</div></article>`);
+    }
+    history.innerHTML = rows.join("") || '<p class="muted">暂无记录</p>';
+  }
+
+  function optionFor(legKey) {
+    return Array.from(selector?.options || []).find((option) => option.value === legKey) || null;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
+  }
+
+  async function loadLeg(legKey) {
+    if (!legKey) return;
+    const response = await fetch(`/api/imports/${encodeURIComponent(importId)}/legs/${encodeURIComponent(legKey)}/history`);
+    const data = await response.json();
+    if (!response.ok) { status.textContent = data.detail?.message || "读取失败"; return; }
+    state.leg = legKey;
+    const latest = data.revisions[data.revisions.length - 1];
+    for (const input of fields) {
+      const value = latest[input.dataset.field];
+      input.value = value === null || value === undefined ? "" : value;
+    }
+    renderHistory(data);
+    const revision = latest.revision;
+    optionFor(legKey)?.setAttribute("data-revision", revision);
+    document.querySelector("#corr-meta").textContent = `当前 r${revision} · 基线 r${revision}`;
+    status.textContent = "";
+  }
+
+  selector?.addEventListener("change", () => loadLeg(selector.value));
+
+  document.querySelector("#corr-submit")?.addEventListener("click", async () => {
+    if (!state.leg) return;
+    const patch = {};
+    for (const input of fields) patch[input.dataset.field] = input.value === "" ? null : input.value;
+    const reason = document.querySelector("#corr-reason").value.trim();
+    const option = optionFor(state.leg);
+    const expected = Number(option?.dataset.revision || 0);
+    const response = await fetch(`/api/imports/${encodeURIComponent(importId)}/legs/${encodeURIComponent(state.leg)}/corrections`, {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({patch, expected_revision: expected, reason}),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      status.textContent = `${data.detail?.code || "失败"}: ${data.detail?.message || ""}`;
+      return;
+    }
+    status.textContent = `已写入 r${data.revision}，刷新查看航链`;
+    document.querySelector("#corr-reason").value = "";
+    await loadLeg(state.leg);
+    setTimeout(() => location.reload(), 600);
+  });
+
+  if (selector?.value) loadLeg(selector.value);
+})();
+</script>
+{% endblock %}
